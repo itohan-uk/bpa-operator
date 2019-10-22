@@ -1,0 +1,36 @@
+if ENV['no_proxy'] != nil or ENV['NO_PROXY']
+     $subnet = "10.0.2"
+     $no_proxy = ENV['NO_PROXY'] || ENV['no_proxy'] || "127.0.0.1,localhost,192.168.50.63"
+     (1..31).each do |i|
+        $no_proxy += ",#{$subnet}.#{i}"
+     end
+end
+
+Vagrant.configure("2") do |config|
+   config.vm.box =  "elastic/ubuntu-18.04-x86_64"
+   config.vm.provision "file", source: "vm_authorized_keys", destination: "/home/vagrant/.ssh/authorized_keys"
+
+   config.vm.provision "shell" do |sh|
+     sh.inline = "mkdir -p /root/.ssh; cp /home/vagrant/.ssh/authorized_keys /root/.ssh/authorized_keys"
+     sh.privileged = true
+   end
+   
+   if ENV['http_proxy'] != nil and ENV['https_proxy'] != nil
+    if Vagrant.has_plugin?('vagrant-proxyconf')
+      config.proxy.http     = ENV['http_proxy'] || ENV['HTTP_PROXY'] || ""
+      config.proxy.https    = ENV['https_proxy'] || ENV['HTTPS_PROXY'] || ""
+      config.proxy.no_proxy = $no_proxy
+      config.proxy.enabled = { docker: false }
+    end
+   end
+
+   config.vm.provider "virtualbox" do |vb|
+     vb.customize ["modifyvm", :id, "--memory", 16384]
+     vb.customize ["modifyvm", :id, "--cpus", 16]
+   end
+
+   config.vm.define vm_name = "bpa-test-vm" do |config|
+      config.vm.hostname = "master-test"
+      config.vm.network "private_network", ip: "192.168.50.63", mac: "080027efab60"
+   end
+end
