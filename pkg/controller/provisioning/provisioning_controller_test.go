@@ -15,7 +15,7 @@ import (
        "k8s.io/apimachinery/pkg/runtime"
        "k8s.io/apimachinery/pkg/types"
        "k8s.io/client-go/kubernetes/scheme"
-       //"sigs.k8s.io/controller-runtime/pkg/client"
+       "sigs.k8s.io/controller-runtime/pkg/client"
        "sigs.k8s.io/controller-runtime/pkg/client/fake"
        "sigs.k8s.io/controller-runtime/pkg/reconcile"
        //fakeclientset "k8s.io/client-go/kubernetes/fake"
@@ -37,6 +37,7 @@ func TestProvisioningController(t *testing.T) {
 
      bmhHost :=  newHost()
 
+     bmhList := newHostList()
      bpaSpec := &bpav1alpha1.ProvisioningSpec{
                Masters: masterList,
 
@@ -44,15 +45,24 @@ func TestProvisioningController(t *testing.T) {
 
     provisioning := newBPA(name, namespace, "test-cluster", bpaSpec)
 
-    objs := []runtime.Object{provisioning,}
+
+    //fakeClient := fakeclientset.NewSimpleClientset(bmhHost, provisioning)
+
+
+
+
+
+
+
+
+    //objs := []runtime.Object{provisioning,bmhHost,bmhList}
+    objs := []runtime.Object{provisioning, bmhList}
 
     // Register operatory tyes with the runtime schem
     sc := scheme.Scheme
 
-    /*if err := metal3v1alpha1.AddToScheme(sc); err != nil {
-        t.Fatalf("Unable to add baremetalhost scheme: (%v)", err)
-    }*/
-    sc.AddKnownTypes(bpav1alpha1.SchemeGroupVersion, provisioning, bmhHost)
+    sc.AddKnownTypes(bpav1alpha1.SchemeGroupVersion, provisioning, bmhHost, bmhList)
+    //sc.AddKnownTypes(bpav1alpha1.SchemeGroupVersion, provisioning, bmhHost)
 
 
 
@@ -71,9 +81,16 @@ func TestProvisioningController(t *testing.T) {
         t.Fatalf("Error occured while getting baremetalhost: (%v)", err)
     }
 
-   fmt.Printf("found bmh\n")
-    provisioningObj := &ReconcileProvisioning{client: fakeClient, scheme: sc}
+   t.Logf("%+v\n", bmh.Status.HardwareDetails)
 
+
+    provisioningObj := &ReconcileProvisioning{client: fakeClient, scheme: sc}
+   // t.Logf("CLIENT:::%v", fakeClient)
+
+
+    bmhL := &metal3v1alpha1.BareMetalHostList{}
+    _ = fakeClient.List(context.TODO(), &client.ListOptions{Namespace: "default",}, bmhL)
+    t.Logf("\n\nLIST BMH::::::::%+v\n\n", bmhL)
 
     req := simulateRequest(provisioning)
 
@@ -138,7 +155,7 @@ func newBPA(name, namespace, clusterName string, spec *bpav1alpha1.ProvisioningS
 }
 
 //func newHost(name string, spec *metal3v1alpha1.BareMetalHostSpec, status *metal3v1alpha1.BareMetalHostStatus) *metal3v1alpha1.BareMetalHost {
-func newHost() *metal3v1alpha1.BareMetalHost {
+func newHostList() *metal3v1alpha1.BareMetalHostList {
 
 
     nicList := make([]metal3v1alpha1.NIC, 2)
@@ -159,7 +176,41 @@ func newHost() *metal3v1alpha1.BareMetalHost {
 
                 nicList[0] = nic1
                 nicList[1] = nic2
-     bmh := &metal3v1alpha1.BareMetalHost{
+
+
+    bmh := &metal3v1alpha1.BareMetalHostList{Items: []metal3v1alpha1.BareMetalHost{{
+
+
+                ObjectMeta: metav1.ObjectMeta{
+                        Name:      "test-bmh-1",
+                        Namespace: "default",
+                },
+                Spec: metal3v1alpha1.BareMetalHostSpec{
+                        BMC: metal3v1alpha1.BMCDetails{
+                                Address:         "",
+                                CredentialsName: "bmc-creds-valid",
+                        },
+                },
+                Status: metal3v1alpha1.BareMetalHostStatus{
+                          HardwareDetails: &metal3v1alpha1.HardwareDetails {
+                                         NIC: nicList,
+                                          Hostname: "fake-host",
+                          },
+
+                            },
+
+                                },}}
+
+
+
+
+
+
+
+
+
+
+     /* bmh := &metal3v1alpha1.BareMetalHost{
 
 
                 ObjectMeta: metav1.ObjectMeta{
@@ -180,7 +231,56 @@ func newHost() *metal3v1alpha1.BareMetalHost {
 
 			    },
 
-				}
+				}*/
 
     return bmh
+}
+
+
+
+func newHost()  *metal3v1alpha1.BareMetalHost {
+
+      nicList := make([]metal3v1alpha1.NIC, 2)
+
+                                nic1 := metal3v1alpha1.NIC{
+                                          Name: "eth1",
+                                          Model: "0x80860x1572",
+                                          MAC: "08:00:27:00:ab:c0",
+                                          IP: "",
+                                }
+
+                                nic2 := metal3v1alpha1.NIC{
+                                      Name: "eth2",
+                                          Model: "0x80860x37d2",
+                                          MAC: "a4:bf:01:64:86:6e",
+                                          IP: "",
+                                }
+
+                nicList[0] = nic1
+                nicList[1] = nic2
+
+     bmh := &metal3v1alpha1.BareMetalHost{
+
+
+
+                ObjectMeta: metav1.ObjectMeta{
+                        Name:      "test-bmh-2",
+                        Namespace: "default",
+                },
+                Spec: metal3v1alpha1.BareMetalHostSpec{
+                        BMC: metal3v1alpha1.BMCDetails{
+                                Address:         "",
+                                CredentialsName: "bmc-creds-valid",
+                        },
+                },
+                Status: metal3v1alpha1.BareMetalHostStatus{
+                          HardwareDetails: &metal3v1alpha1.HardwareDetails {
+                                         NIC: nicList,
+                                          Hostname: "fake-host",
+                          },
+
+                            },
+
+                                }
+         return bmh
 }
