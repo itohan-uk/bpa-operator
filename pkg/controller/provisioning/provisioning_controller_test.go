@@ -12,13 +12,16 @@ import (
        batchv1 "k8s.io/api/batch/v1"
        logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
        metal3v1alpha1 "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
+       metal3 "github.com/metal3-io/baremetal-operator/pkg/apis"
        "k8s.io/apimachinery/pkg/runtime"
        "k8s.io/apimachinery/pkg/types"
        "k8s.io/client-go/kubernetes/scheme"
-       "sigs.k8s.io/controller-runtime/pkg/client"
+       "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+       //"sigs.k8s.io/controller-runtime/pkg/client"
        "sigs.k8s.io/controller-runtime/pkg/client/fake"
        "sigs.k8s.io/controller-runtime/pkg/reconcile"
-       //fakeclientset "k8s.io/client-go/kubernetes/fake"
+       fakedynamic "k8s.io/client-go/dynamic/fake"
+       fakeclientset "k8s.io/client-go/kubernetes/fake"
 )
 
 func TestProvisioningController(t *testing.T) {
@@ -35,9 +38,14 @@ func TestProvisioningController(t *testing.T) {
      masterList := make([]map[string]bpav1alpha1.Master, 1)
      masterList[0] = masterMap
 
-     bmhHost :=  newHost()
+     //bmhHost :=  newHost()
 
      bmhList := newHostList()
+     //bmhList := newBMList()
+     //t.Logf("\n\n%+v\n\n UUUUUUUU", bmhListLLL)
+
+
+
      bpaSpec := &bpav1alpha1.ProvisioningSpec{
                Masters: masterList,
 
@@ -46,73 +54,42 @@ func TestProvisioningController(t *testing.T) {
     provisioning := newBPA(name, namespace, "test-cluster", bpaSpec)
 
 
-    //fakeClient := fakeclientset.NewSimpleClientset(bmhHost, provisioning)
+    // Objects to track in the fake Client
+    objs := []runtime.Object{provisioning}
 
-
-
-
-
-
-
-
-    //objs := []runtime.Object{provisioning,bmhHost,bmhList}
-    objs := []runtime.Object{provisioning, bmhList}
-
-    // Register operatory tyes with the runtime schem
+    // Register operator types with the runtime scheme
     sc := scheme.Scheme
 
-    sc.AddKnownTypes(bpav1alpha1.SchemeGroupVersion, provisioning, bmhHost, bmhList)
-    //sc.AddKnownTypes(bpav1alpha1.SchemeGroupVersion, provisioning, bmhHost)
+    // Add baremetalHost to Scheme
+    if err := metal3.AddToScheme(sc); err != nil {
+        t.Fatalf("Unable to add BareMetalHost scheme: (%v)", err)
+    }
+    sc.AddKnownTypes(bpav1alpha1.SchemeGroupVersion, provisioning)
+
+    //Create Fake Client and Clientset
+    fakeClient := fake.NewFakeClient(objs...)
+    fakeDyn := fakedynamic.NewSimpleDynamicClient(sc, bmhList )
+    fakeClientSet := fakeclientset.NewSimpleClientset()
 
 
+    r := &ReconcileProvisioning{client: fakeClient, scheme: sc, clientset: fakeClientSet, bmhClient: fakeDyn}
 
-    // Create a fake client
-    //fakeClient := fake.NewFakeClient(objs...)
-    fakeClient := fake.NewFakeClientWithScheme(sc, objs...)
 
-    err := fakeClient.Create(context.TODO(), bmhHost)
-    if err != nil {
-       t.Fatalf("Error occured while create baremetal host: (%v)", err)
+   // Mock request to simulate Reconcile() being called on an event for a
+    // watched resource .
+    req := reconcile.Request{
+        NamespacedName: types.NamespacedName{
+            Name:      name,
+            Namespace: namespace,
+        },
     }
 
-    bmh := &metal3v1alpha1.BareMetalHost{}
-    err = fakeClient.Get(context.TODO(), types.NamespacedName{Name: bmhHost.Name, Namespace: bmhHost.Namespace}, bmh)
-    if err != nil {
-        t.Fatalf("Error occured while getting baremetalhost: (%v)", err)
-    }
-
-   t.Logf("%+v\n", bmh.Status.HardwareDetails)
-
-
-    provisioningObj := &ReconcileProvisioning{client: fakeClient, scheme: sc}
-   // t.Logf("CLIENT:::%v", fakeClient)
-
-
-    bmhL := &metal3v1alpha1.BareMetalHostList{}
-    _ = fakeClient.List(context.TODO(), &client.ListOptions{Namespace: "default",}, bmhL)
-    t.Logf("\n\nLIST BMH::::::::%+v\n\n", bmhL)
-
-    req := simulateRequest(provisioning)
-
-
-    res, err := provisioningObj.Reconcile(req)
-
+   _, err := r.Reconcile(req)
     if err != nil {
        t.Fatalf("reconcile: (%v)", err)
     }
 
-    if res != (reconcile.Result{}) {
-        t.Error("reconcile did not return an empty Result")
-    }
 
-
-   //expectedJob := createKUDinstallerJob("test-cluster", "default", map[string]string{ "cluster": "test-cluster", }, fakeClientSet)
-   // Check if a job was created
-   /*bmh := &metal3v1alpha1.BareMetalHost{}
-   err = fakeClient.Get(context.TODO(), types.NamespacedName{Name: bmhHost.Name, Namespace: bmhHost.Namespace}, bmh)
-    if err != nil {
-        t.Fatalf("Error occured while getting baremetalhost: (%v)", err)
-    }*/
 
 
    jb := &batchv1.Job{}
@@ -201,38 +178,6 @@ func newHostList() *metal3v1alpha1.BareMetalHostList {
 
                                 },}}
 
-
-
-
-
-
-
-
-
-
-     /* bmh := &metal3v1alpha1.BareMetalHost{
-
-
-                ObjectMeta: metav1.ObjectMeta{
-                        Name:      "test-bmh",
-                        Namespace: "default",
-                },
-                Spec: metal3v1alpha1.BareMetalHostSpec{
-                        BMC: metal3v1alpha1.BMCDetails{
-                                Address:         "",
-                                CredentialsName: "bmc-creds-valid",
-                        },
-                },
-                Status: metal3v1alpha1.BareMetalHostStatus{
-                          HardwareDetails: &metal3v1alpha1.HardwareDetails {
-                                         NIC: nicList,
-                                          Hostname: "fake-host",
-                          },
-
-			    },
-
-				}*/
-
     return bmh
 }
 
@@ -283,4 +228,91 @@ func newHost()  *metal3v1alpha1.BareMetalHost {
 
                                 }
          return bmh
+}
+
+
+func newBMList() *unstructured.UnstructuredList{
+
+	bmMap := map[string]interface{}{
+			   "apiVersion": "metal3.io/v1alpha1",
+			   "kind": "BareMetalHostList",
+			   "metaDatai": map[string]interface{}{
+			       "continue": "",
+				   "resourceVersion": "11830058",
+				   "selfLink": "/apis/metal3.io/v1alpha1/baremetalhosts",
+
+		 },
+		 }
+
+
+
+
+	metaData := map[string]interface{}{
+			 "creationTimestamp": "2019-10-24T04:51:15Z",
+			 "generation":"1",
+			 "name": "bpa-test-bmh",
+			 "namespace": "default",
+			 "resourceVersion": "11829263",
+			 "selfLink": "/apis/metal3.io/v1alpha1/namespaces/default/baremetalhosts/bpa-test-bmh",
+			 "uid": "e92cb312-f619-11e9-90bc-00219ba0c77a",
+	}
+
+
+
+	nicMap1 := map[string]interface{}{
+			"ip": "",
+			 "mac": "08:00:27:00:ab:c0",
+			 "model": "0x8086 0x1572",
+			 "name": "eth3",
+			 "pxe": "false",
+			 "speedGbps": "0",
+			 "vlanId": "0",
+	}
+
+	nicMap2 := map[string]interface{}{
+			"ip": "",
+			 "mac": "a4:bf:01:64:86:6e",
+			 "model": "0x8086 0x37d2",
+			 "name": "eth4",
+			 "pxe": "false",
+			 "speedGbps": "0",
+			 "vlanId": "0",
+	}
+
+	nicList := []map[string]interface{}{
+			   nicMap1,
+			   nicMap2,
+			 }
+
+	specMap  := map[string]interface{}{
+			  "status" : map[string]interface{}{
+				   "errorMessage": "",
+					"hardware": map[string]interface{}{
+					   "nics": nicList,
+			  },
+			  },
+
+
+	}
+
+	itemMap := map[string]interface{}{
+			   "apiVersion": "metal3.io/v1alpha1",
+			   "kind": "BareMetalHost",
+			   "metadata": metaData,
+			   "spec": specMap,
+		 }
+	itemU := unstructured.Unstructured{
+			 Object: itemMap,
+		   }
+
+	itemsList := []unstructured.Unstructured{itemU,}
+
+	bmhList := &unstructured.UnstructuredList{
+					Object: bmMap,
+					Items: itemsList,
+	 }
+
+
+      return bmhList
+
 }
