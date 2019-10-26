@@ -23,22 +23,12 @@ func TestProvisioningController(t *testing.T) {
      name := "bpa-test-cr"
      namespace := "default"
      clusterName := "test-cluster"
-     masterMap := map[string]bpav1alpha1.Master{
-                  "test-master" : bpav1alpha1.Master{
-                          MACaddress: "08:00:27:00:ab:2c",
-                   },
-     }
-
-     masterList := []map[string]bpav1alpha1.Master{masterMap,}
 
      // Create Fake baremetalhost
      bmhList := newBMList()
-     bpaSpec := &bpav1alpha1.ProvisioningSpec{
-               Masters: masterList,
-               }
 
     // Create Fake Provisioning CR
-    provisioning := newBPA(name, namespace, clusterName, bpaSpec)
+    provisioning := newBPA(name, namespace, clusterName)
 
     // Objects to track in the fake Client
     objs := []runtime.Object{provisioning}
@@ -85,7 +75,9 @@ func simulateRequest(bpaCR *bpav1alpha1.Provisioning) reconcile.Request {
 	return reconcile.Request{NamespacedName: namespacedName}
 }
 
-func newBPA(name, namespace, clusterName string, spec *bpav1alpha1.ProvisioningSpec) *bpav1alpha1.Provisioning {
+
+
+func newBPA(name, namespace, clusterName string) *bpav1alpha1.Provisioning {
 
      provisioningCR := &bpav1alpha1.Provisioning{
         ObjectMeta: metav1.ObjectMeta{
@@ -95,9 +87,18 @@ func newBPA(name, namespace, clusterName string, spec *bpav1alpha1.ProvisioningS
                 "cluster": clusterName,
             },
         },
-        Spec: *spec,
-    }
+        Spec: bpav1alpha1.ProvisioningSpec{
+               Masters: []map[string]bpav1alpha1.Master{
+                         map[string]bpav1alpha1.Master{
+                           "test-master" : bpav1alpha1.Master{
+                                 MACaddress: "08:00:27:00:ab:2c",
+                            },
 
+               },
+              },
+       },
+
+    }
     return provisioningCR
 }
 
