@@ -518,7 +518,6 @@ func listBareMetalHosts(bmhDynamicClient dynamic.Interface) (*unstructured.Unstr
     return bareMetalHosts, nil
 }
 
-
 //Function to check if BareMetalHost containing MAC address exist
 func checkMACaddress(bareMetalHostList *unstructured.UnstructuredList, macAddress string) (bool, string) {
 
