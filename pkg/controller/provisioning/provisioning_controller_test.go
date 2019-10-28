@@ -3,6 +3,8 @@ package provisioning
 import (
 
        "testing"
+       "io/ioutil"
+       "os"
 
        bpav1alpha1 "github.com/bpa-operator/pkg/apis/bpa/v1alpha1"
        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,23 +22,34 @@ import (
 func TestProvisioningController(t *testing.T) {
 
      logf.SetLogger(logf.ZapLogger(true))
-     name := "bpa-test-cr"
+     bpaName1 := "bpa-test-cr"
+     bpaName2 := "bpa-test-2"
      namespace := "default"
      clusterName := "test-cluster"
+     clusterName2 :=  "test-cluster-2"
+     macAddress1 := "08:00:27:00:ab:2c"
+     macAddress2 := "08:00:27:00:ab:3d"
+
+     // Create Fake DHCP file
+     err := createFakeDHCP()
+     if err != nil {
+        t.Fatalf("Cannot create Fake DHCP file for testing\n")
+     }
 
      // Create Fake baremetalhost
      bmhList := newBMList()
 
     // Create Fake Provisioning CR
-    provisioning := newBPA(name, namespace, clusterName)
+    provisioning := newBPA(bpaName1, namespace, clusterName, macAddress1)
+    provisioning2 := newBPA(bpaName2, namespace, clusterName2, macAddress2)
 
     // Objects to track in the fake Client
-    objs := []runtime.Object{provisioning}
+    objs := []runtime.Object{provisioning, provisioning2}
 
     // Register operator types with the runtime scheme
     sc := scheme.Scheme
 
-    sc.AddKnownTypes(bpav1alpha1.SchemeGroupVersion, provisioning)
+    sc.AddKnownTypes(bpav1alpha1.SchemeGroupVersion, provisioning, provisioning2)
 
     // Create Fake Clients and Clientset
     fakeClient := fake.NewFakeClient(objs...)
@@ -46,13 +59,13 @@ func TestProvisioningController(t *testing.T) {
     r := &ReconcileProvisioning{client: fakeClient, scheme: sc, clientset: fakeClientSet, bmhClient: fakeDyn}
 
     // Mock request to simulate Reconcile() being called on an event for a watched resource 
-
     req := simulateRequest(provisioning)
-    _, err := r.Reconcile(req)
+    _, err = r.Reconcile(req)
     if err != nil {
        t.Fatalf("reconcile: (%v)", err)
     }
 
+   // Test 1: Check the job was created with the expected name
    jobClient := r.clientset.BatchV1().Jobs(namespace)
    job, err := jobClient.Get("kud-test-cluster", metav1.GetOptions{})
 
@@ -60,9 +73,25 @@ func TestProvisioningController(t *testing.T) {
         t.Fatalf("Error occured while getting job: (%v)", err)
     }
 
+   // Test 2: Check that cluster name metadata in job is the expected cluster name
    jobClusterName := job.Labels["cluster"]
    if jobClusterName != clusterName {
       t.Fatalf("Job cluster Name is wrong")
+   }
+
+
+   // Test 3: Check that the right error is produced when host with MAC address does not exist
+   req = simulateRequest(provisioning2)
+    _, err = r.Reconcile(req)
+    expectedErr := "Host with MAC Address " + macAddress2 + " not found\n"
+    if err.Error() != expectedErr {
+       t.Fatalf("Failed, Unexpected error occured %v\n", err)
+    }
+
+   // Delete Fake DHCP file
+   err = os.Remove("/var/lib/dhcp/dhcpd.leases")
+   if err != nil {
+      t.Logf("\nUnable to delete fake DHCP file\n")
    }
 
 }
@@ -77,7 +106,7 @@ func simulateRequest(bpaCR *bpav1alpha1.Provisioning) reconcile.Request {
 
 
 
-func newBPA(name, namespace, clusterName string) *bpav1alpha1.Provisioning {
+func newBPA(name, namespace, clusterName, macAddress string) *bpav1alpha1.Provisioning {
 
      provisioningCR := &bpav1alpha1.Provisioning{
         ObjectMeta: metav1.ObjectMeta{
@@ -91,7 +120,7 @@ func newBPA(name, namespace, clusterName string) *bpav1alpha1.Provisioning {
                Masters: []map[string]bpav1alpha1.Master{
                          map[string]bpav1alpha1.Master{
                            "test-master" : bpav1alpha1.Master{
-                                 MACaddress: "08:00:27:00:ab:2c",
+                                 MACaddress: macAddress,
                             },
 
                },
@@ -108,7 +137,7 @@ func newBMList() *unstructured.UnstructuredList{
 	bmMap := map[string]interface{}{
 			   "apiVersion": "metal3.io/v1alpha1",
 			   "kind": "BareMetalHostList",
-			   "metaDatai": map[string]interface{}{
+			   "metaData": map[string]interface{}{
 			       "continue": "",
 				   "resourceVersion": "11830058",
 				   "selfLink": "/apis/metal3.io/v1alpha1/baremetalhosts",
@@ -175,4 +204,24 @@ func newBMList() *unstructured.UnstructuredList{
 
 
 // Create DHCP file for testing
+func createFakeDHCP() error{
 
+
+     dhcpData := []byte(`lease 192.168.50.63 {
+  starts 4 2019/08/08 22:32:49;
+  ends 4 2019/08/08 23:52:49;
+  cltt 4 2019/08/08 22:32:49;
+  binding state active;
+  next binding state free;
+  rewind binding state free;
+  hardware ethernet 08:00:27:00:ab:2c;
+  client-hostname "fake-test-bmh"";
+}`)
+     err := ioutil.WriteFile("/var/lib/dhcp/dhcpd.leases", dhcpData, 0777)
+
+     if (err != nil) {
+        return err
+     }
+
+    return nil
+}
