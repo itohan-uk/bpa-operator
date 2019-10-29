@@ -100,7 +100,7 @@ func TestProvisioningController(t *testing.T) {
        t.Fatalf("Failed, Unexpected error occured %v\n", err)
     }
 
-   // Delete Fake DHCP file and cluster directory
+   // Delete Fake DHCP file and cluster directories
    err = os.Remove("/var/lib/dhcp/dhcpd.leases")
    if err != nil {
       t.Logf("\nUnable to delete fake DHCP file\n")

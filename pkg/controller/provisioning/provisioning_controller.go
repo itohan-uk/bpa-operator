@@ -200,6 +200,8 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
         virtletVMList, _ := listVirtletVMs(r.clientset)
 
 
+
+
         var allString string
         var masterString string
         var workerString string
@@ -517,6 +519,7 @@ func listBareMetalHosts(bmhDynamicClient dynamic.Interface) (*unstructured.Unstr
 
     return bareMetalHosts, nil
 }
+
 
 //Function to check if BareMetalHost containing MAC address exist
 func checkMACaddress(bareMetalHostList *unstructured.UnstructuredList, macAddress string) (bool, string) {
