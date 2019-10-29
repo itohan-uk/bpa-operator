@@ -24,11 +24,14 @@ func TestProvisioningController(t *testing.T) {
      logf.SetLogger(logf.ZapLogger(true))
      bpaName1 := "bpa-test-cr"
      bpaName2 := "bpa-test-2"
+     bpaName3 := "bpa-test-3"
      namespace := "default"
      clusterName := "test-cluster"
      clusterName2 :=  "test-cluster-2"
+     clusterName3 := "test-cluster-3"
      macAddress1 := "08:00:27:00:ab:2c"
      macAddress2 := "08:00:27:00:ab:3d"
+     macAddress3 := "08:00:27:00:ab:1c"
 
      // Create Fake DHCP file
      err := createFakeDHCP()
@@ -42,14 +45,15 @@ func TestProvisioningController(t *testing.T) {
     // Create Fake Provisioning CR
     provisioning := newBPA(bpaName1, namespace, clusterName, macAddress1)
     provisioning2 := newBPA(bpaName2, namespace, clusterName2, macAddress2)
+    provisioning3 := newBPA(bpaName3, namespace, clusterName3, macAddress3)
 
     // Objects to track in the fake Client
-    objs := []runtime.Object{provisioning, provisioning2}
+    objs := []runtime.Object{provisioning, provisioning2, provisioning3}
 
     // Register operator types with the runtime scheme
     sc := scheme.Scheme
 
-    sc.AddKnownTypes(bpav1alpha1.SchemeGroupVersion, provisioning, provisioning2)
+    sc.AddKnownTypes(bpav1alpha1.SchemeGroupVersion, provisioning, provisioning2, provisioning3)
 
     // Create Fake Clients and Clientset
     fakeClient := fake.NewFakeClient(objs...)
@@ -88,11 +92,32 @@ func TestProvisioningController(t *testing.T) {
        t.Fatalf("Failed, Unexpected error occured %v\n", err)
     }
 
-   // Delete Fake DHCP file
+   // Test 4: Check that the right error is produced when MAC address is not found in the DHCP lease file
+   req = simulateRequest(provisioning3)
+    _, err = r.Reconcile(req)
+    expectedErr = "IP address not found for host with MAC address " + macAddress3 + " \n"
+    if err.Error() != expectedErr {
+       t.Fatalf("Failed, Unexpected error occured %v\n", err)
+    }
+
+   // Delete Fake DHCP file and cluster directory
    err = os.Remove("/var/lib/dhcp/dhcpd.leases")
    if err != nil {
       t.Logf("\nUnable to delete fake DHCP file\n")
    }
+   err = os.RemoveAll("/multi-cluster/" + clusterName)
+   if err != nil {
+      t.Logf("\nUnable to delete cluster directory %s\n", clusterName)
+   }
+   err = os.RemoveAll("/multi-cluster/" + clusterName2)
+   if err != nil {
+      t.Logf("\nUnable to delete cluster directory %s\n", clusterName2)
+   }
+   err = os.RemoveAll("/multi-cluster/" + clusterName3)
+   if err != nil {
+      t.Logf("\nUnable to delete cluster directory %s\n", clusterName3)
+   }
+
 
 }
 
@@ -170,11 +195,24 @@ func newBMList() *unstructured.UnstructuredList{
 			 "vlanId": "0",
 	}
 
+       nicMap2 := map[string]interface{}{
+                        "ip": "",
+                         "mac": "08:00:27:00:ab:1c",
+                         "model": "0x8086 0x1572",
+                         "name": "eth4",
+                         "pxe": "false",
+                         "speedGbps": "0",
+                         "vlanId": "0",
+        }
+
 	specMap  := map[string]interface{}{
 			  "status" : map[string]interface{}{
 				   "errorMessage": "",
 					"hardware": map[string]interface{}{
-					   "nics": nicMap1,
+					   "nics": map[string]interface{}{
+                                                "nic1" : nicMap1,
+                                                "nic2" : nicMap2,
+                                            },
 			  },
 			  },
 
