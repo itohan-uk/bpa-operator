@@ -17,7 +17,7 @@ spec:
       containers:
         - name: bpa-operator
           # Replace this with the built image name
-          image: github.com/icn/bpa-operator:latest
+          image: akraino.org/icn/bpa-operator:latest
           imagePullPolicy: IfNotPresent
           volumeMounts:
           - name: dhcp-shared
