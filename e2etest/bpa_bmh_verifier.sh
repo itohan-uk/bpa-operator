@@ -41,5 +41,6 @@ fi
 printf "\n\nBeginning BMH E2E Test Teardown\n\n"
 kubectl delete -f e2etest/test_bmh_provisioning_cr.yaml
 kubectl delete job kud-test-bmh-cluster
+kubectl delete configmap test-bmh-cluster-configmap
 rm -rf /multi-cluster/test-bmh-cluster
 make delete
