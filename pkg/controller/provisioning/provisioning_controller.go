@@ -12,7 +12,7 @@ import (
         "encoding/json"
 
         bpav1alpha1 "github.com/bpa-operator/pkg/apis/bpa/v1alpha1"
-        metal3v1alpha1 "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
+        //metal3v1alpha1 "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
         metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
         corev1 "k8s.io/api/core/v1"
         batchv1 "k8s.io/api/batch/v1"
@@ -191,8 +191,8 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
 
 
         bareMetalHostList, _ := listBareMetalHosts(r.bmhClient)
-        bareMetalHostListH, _ := listBareMetalHostsH(r.client)
-        fmt.Printf("\n%v\n", bareMetalHostListH)
+        //bareMetalHostListH, _ := listBareMetalHostsH(r.client)
+        //fmt.Printf("\n%v\n", bareMetalHostListH)
         virtletVMList, _ := listVirtletVMs(r.client)
 
 
@@ -512,7 +512,7 @@ func listBareMetalHosts(bmhDynamicClient dynamic.Interface) (*unstructured.Unstr
     return bareMetalHosts, nil
 }
 
-//Function to List BareMetal Hosts
+/*//Function to List BareMetal Hosts
 func listBareMetalHostsH(bmClient client.Client) (*metal3v1alpha1.BareMetalHostList, error) {
 
      bmhList := &metal3v1alpha1.BareMetalHostList{}
@@ -524,7 +524,7 @@ func listBareMetalHostsH(bmClient client.Client) (*metal3v1alpha1.BareMetalHostL
 
      return bmhList, nil
 
-}
+}*/
 
 
 //Function to check if BareMetalHost containing MAC address exist
