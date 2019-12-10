@@ -13,7 +13,7 @@ import (
 
 	"github.com/bpa-operator/pkg/apis"
 	"github.com/bpa-operator/pkg/controller"
-        metal3 "github.com/metal3-io/baremetal-operator/pkg/apis"
+        //metal3 "github.com/metal3-io/baremetal-operator/pkg/apis"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	kubemetrics "github.com/operator-framework/operator-sdk/pkg/kube-metrics"
 	"github.com/operator-framework/operator-sdk/pkg/leader"
@@ -90,7 +90,7 @@ func main() {
 
 	// Create a new Cmd to provide shared dependencies and start components
 	mgr, err := manager.New(cfg, manager.Options{
-		Namespace:          "",
+		Namespace:          namespace,
 		MapperProvider:     restmapper.NewDynamicRESTMapper,
 		MetricsBindAddress: fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 	})
@@ -108,11 +108,11 @@ func main() {
 	}
 
 
-        // Adding the baremetalhost scheme
+        /*// Adding the baremetalhost scheme
         if err := metal3.AddToScheme(mgr.GetScheme()); err != nil {
                 log.Error(err, "")
                 os.Exit(1)
-        }
+        }*/
 
 
 	// Setup all Controllers
