@@ -58,10 +58,6 @@ const (
 	// StateReady means the host can be consumed
 	StateReady ProvisioningState = "ready"
 
-	// StateValidationError means the provisioning instructions had an
-	// error
-	StateValidationError ProvisioningState = "validation error"
-
 	// StateProvisioning means we are writing an image to the host's
 	// disk(s)
 	StateProvisioning ProvisioningState = "provisioning"
@@ -89,6 +85,10 @@ const (
 	// StatePowerManagementError means something went wrong trying to
 	// power the server on or off.
 	StatePowerManagementError ProvisioningState = "power management error"
+
+	// StateDeleting means we are in the process of cleaning up the host
+	// ready for deletion
+	StateDeleting ProvisioningState = "deleting"
 )
 
 // BMCDetails contains the information necessary to communicate with
@@ -125,7 +125,7 @@ type BareMetalHostSpec struct {
 
 	// Which MAC address will PXE boot? This is optional for some
 	// types, but required for libvirt VMs driven by vbmc.
-	// +kubebuilder:validation:Pattern=[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}
+	// +kubebuilder:validation:Pattern=`[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}`
 	BootMACAddress string `json:"bootMACAddress,omitempty"`
 
 	// Should the server be online?
@@ -254,7 +254,7 @@ type NIC struct {
 	Model string `json:"model"`
 
 	// The device MAC addr
-	// +kubebuilder:validation:Pattern=[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}
+	// +kubebuilder:validation:Pattern=`[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}`
 	MAC string `json:"mac"`
 
 	// The IP address of the device

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-kubectl create -f e2etest/test_bmh_provisioning_cr.yaml 
+kubectl create -f e2etest/test_bmh_provisioning_cr.yaml
 sleep 5
 
 #Check Status of kud job pod
@@ -38,9 +38,16 @@ else
 fi
 
 
+#Print logs of Job Pod
+jobPod=$(kubectl get pods|grep kud-test-bmh-cluster)
+podName=$(echo $jobPod | cut -d " " -f 1)
+printf "\nNow Printing Job pod logs\n"
+kubectl logs $podName
+
+#Tear down setup
 printf "\n\nBeginning BMH E2E Test Teardown\n\n"
 kubectl delete -f e2etest/test_bmh_provisioning_cr.yaml
 kubectl delete job kud-test-bmh-cluster
 kubectl delete configmap test-bmh-cluster-configmap
-rm -rf /multi-cluster/test-bmh-cluster
+rm -rf /opt/kud/multi-cluster/test-bmh-cluster
 make delete

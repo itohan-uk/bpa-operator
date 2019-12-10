@@ -97,11 +97,18 @@ else
 fi
 
 
+#Print logs of Job Pod
+jobPod=$(kubectl get pods|grep kud-cluster-test)
+podName=$(echo $jobPod | cut -d " " -f 1)
+printf "\nNow Printing Job pod logs\n"
+kubectl logs $podName
+
+#Teardown Setup
 printf "\n\nBeginning E2E Test Teardown\n\n"
 kubectl delete -f e2etest/e2e_test_provisioning_cr.yaml
 kubectl delete job kud-cluster-test
 kubectl delete configmap cluster-test-configmap
 rm e2etest/e2e_test_provisioning_cr.yaml
-rm -rf /multi-cluster/cluster-test
+rm -rf /opt/kud/multi-cluster/cluster-test
 rm /opt/icn/dhcp/dhcpd.leases
 make delete
