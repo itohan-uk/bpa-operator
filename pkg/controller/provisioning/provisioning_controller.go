@@ -194,7 +194,6 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
 
 
 
-
         var allString string
         var masterString string
         var workerString string
@@ -207,8 +206,6 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
 	os.MkdirAll(clusterDir, os.ModePerm)
 
 	//Create Maps to be used for cluster ip address to label configmap
-	clusterLabel := make(map[string]string)
-        clusterLabel["cluster"] = clusterName
 	clusterData := make(map[string]string)
 
 
@@ -369,7 +366,6 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
         }
 
         //Create host.ini file
-        //iniHostFilePath := kudInstallerScript + "/inventory/hosts.ini"
         iniHostFilePath := clusterDir + "/hosts.ini"
         newFile, err := os.Create(iniHostFilePath)
         defer newFile.Close()
