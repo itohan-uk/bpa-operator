@@ -14,7 +14,6 @@ import (
 	"github.com/bpa-operator/pkg/apis"
 	"github.com/bpa-operator/pkg/controller"
 
-         metal3 "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	kubemetrics "github.com/operator-framework/operator-sdk/pkg/kube-metrics"
 	"github.com/operator-framework/operator-sdk/pkg/leader"
@@ -68,11 +67,11 @@ func main() {
 
 	printVersion()
 
-	/*namespace, err := k8sutil.GetWatchNamespace()
+	namespace, err := k8sutil.GetWatchNamespace()
 	if err != nil {
 		log.Error(err, "Failed to get watch namespace")
 		os.Exit(1)
-	}*/
+	}
 
 	// Get a config to talk to the apiserver
 	cfg, err := config.GetConfig()
@@ -91,7 +90,7 @@ func main() {
 
 	// Create a new Cmd to provide shared dependencies and start components
 	mgr, err := manager.New(cfg, manager.Options{
-		Namespace:          "",
+		Namespace:          namespace,
 		MapperProvider:     restmapper.NewDynamicRESTMapper,
 		MetricsBindAddress: fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 	})
@@ -107,14 +106,6 @@ func main() {
 		log.Error(err, "")
 		os.Exit(1)
 	}
-
-
-        // Adding the baremetalhost scheme
-        if err := metal3.AddToScheme(mgr.GetScheme()); err != nil {
-                log.Error(err, "")
-                os.Exit(1)
-        }
-
 
 	// Setup all Controllers
 	if err := controller.AddToManager(mgr); err != nil {
