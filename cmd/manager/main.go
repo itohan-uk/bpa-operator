@@ -68,11 +68,11 @@ func main() {
 
 	printVersion()
 
-	namespace, err := k8sutil.GetWatchNamespace()
+	/*namespace, err := k8sutil.GetWatchNamespace()
 	if err != nil {
 		log.Error(err, "Failed to get watch namespace")
 		os.Exit(1)
-	}
+	}*/
 
 	// Get a config to talk to the apiserver
 	cfg, err := config.GetConfig()
@@ -91,7 +91,7 @@ func main() {
 
 	// Create a new Cmd to provide shared dependencies and start components
 	mgr, err := manager.New(cfg, manager.Options{
-		Namespace:          namespace,
+		Namespace:          "",
 		MapperProvider:     restmapper.NewDynamicRESTMapper,
 		MetricsBindAddress: fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 	})
