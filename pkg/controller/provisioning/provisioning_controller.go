@@ -584,6 +584,7 @@ func (r *ReconcileProvisioning) createConfigMap(p *bpav1alpha1.Provisioning, dat
      foundConfig := &corev1.ConfigMap{}
      err := r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: p.Namespace}, foundConfig)
 
+
      if err != nil && errors.IsNotFound(err) {
 
           // Configmap has not been created, create it
@@ -591,6 +592,7 @@ func (r *ReconcileProvisioning) createConfigMap(p *bpav1alpha1.Provisioning, dat
 
               ObjectMeta: metav1.ObjectMeta{
                         Name: cmName,
+			Namespace: p.Namespace,
                         Labels: p.Labels,
                       },
               Data: data,
