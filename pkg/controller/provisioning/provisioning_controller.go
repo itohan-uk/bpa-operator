@@ -577,17 +577,9 @@ func getHostIPaddress(macAddress string, dhcpLeaseFilePath string ) (string, err
 }
 
 //Function to create configmap
-func (r *ReconcileProvisioning) createConfigMap(p *bpav1alpha1.Provisioning, data map[string]string) error{
+func (r *ReconcileProvisioning) createConfigMap(p *bpav1alpha1.Provisioning, data map[string]string, cmName string) error{
 
-     // Check if Config Map already exist
-     cmName := p.Labels["cluster"] + "-configmap"
-     foundConfig := &corev1.ConfigMap{}
-     err := r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: p.Namespace}, foundConfig)
-
-
-     if err != nil && errors.IsNotFound(err) {
-
-          // Configmap has not been created, create it
+         // Configmap has not been created, create it
           configmap := &corev1.ConfigMap{
 
               ObjectMeta: metav1.ObjectMeta{
@@ -601,15 +593,12 @@ func (r *ReconcileProvisioning) createConfigMap(p *bpav1alpha1.Provisioning, dat
 
          // Set provisioning instance as the owner of the job
          controllerutil.SetControllerReference(p, configmap, r.scheme)
-         err = r.client.Create(context.TODO(), configmap)
+         err := r.client.Create(context.TODO(), configmap)
          if err != nil {
              return err
 
          }
 
-     } else if err != nil {
-         return err
-     }
      return nil
 
 }
@@ -746,7 +735,6 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data map[s
      job := &batchv1.Job{}
 
      for {
-         time.Sleep(2 * time.Second)
 
          err := r.client.Get(context.TODO(), types.NamespacedName{Name: jobName, Namespace: p.Namespace}, job)
          if err != nil {
@@ -760,12 +748,24 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data map[s
             fmt.Printf("\n Job succeeded, KUD successfully installed in Cluster %s\n", clusterName)
 
             //KUD was installed successfully create configmap to store IP address info for the cluster
-            err = r.createConfigMap(p, data)
-            if err != nil {
-               fmt.Printf("Error occured while creating Ip address configmap for cluster %v\n ERROR: %v", clusterName, err)
+            cmName := p.Labels["cluster"] + "-configmap"
+            foundConfig := &corev1.ConfigMap{}
+            err := r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: p.Namespace}, foundConfig)
+
+            if err != nil && errors.IsNotFound(err) {
+               err = r.createConfigMap(p, data, cmName)
+               if err != nil {
+                  fmt.Printf("Error occured while creating Ip address configmap for cluster %v\n ERROR: %v", clusterName, err)
                return
-            }
+                }
             return
+
+            } else if err != nil {
+              fmt.Printf("ERROR occured in Create Config map section: %v\n", err)
+              return
+              }
+
+           return
          }
 
         if jobFailed == 1 {
@@ -773,6 +773,7 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data map[s
            return
         }
 
+        time.Sleep(5 * time.Second)
      }
     return
 
