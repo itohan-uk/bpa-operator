@@ -207,6 +207,7 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
 
 	//Create Maps to be used for cluster ip address to label configmap
 	clusterData := make(map[string]string)
+	clusterMACData := make(map[string]string)
 
 
 
@@ -254,6 +255,7 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
                        }
                        masterString += masterLabel + "\n"
                        clusterData[masterTag + masterLabel] = hostIPaddress
+                       clusterMACData[masterMAC] = masterTag + masterLabel
 
                        fmt.Printf("%s : %s \n", hostIPaddress, masterMAC)
 
@@ -338,6 +340,7 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
                                            }
                                            workerString += workerLabel + "\n"
 					   clusterData[workerTag + workerLabel] = hostIPaddress
+					   clusterMACData[workerMAC] = workerTag + workerLabel
 
                                        //No host found that matches the worker MAC
                                        } else {
@@ -442,7 +445,7 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
 
         //Start separate thread to keep checking job status, Create an IP address configmap
         //for cluster if KUD is successfully installed
-        go r.checkJob(provisioningInstance, clusterData)
+        go r.checkJob(provisioningInstance, clusterData, clusterMACData)
 
         return reconcile.Result{}, nil
 
@@ -457,7 +460,8 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
         defaultSSHPrivateKey := "/root/.ssh/id_rsa"
 
         //Get IP address configmap for the cluster
-        clusterConfigMapData, err := r.getConfigMapData(provisioningInstance)
+        configmapName :=  p.Labels["cluster"] + "-configmap"
+        clusterConfigMapData, err := r.getConfigMapData(softwareInstance.Namespace, configmapName)
         if err != nil {
            fmt.Printf("Error occured while retrieving IP address Data for cluster %s, ERROR: %v\n", softwareClusterName, err)
            return reconcile.Result{}, err
@@ -527,6 +531,39 @@ func checkMACaddress(bareMetalHostList *unstructured.UnstructuredList, macAddres
 
 }
 
+//Function to check if MAC address has been used in another provisioning CR
+func (r *ReconcileProvisioning) macAddressUsed(namespace, macAddress string) (bool, error) {
+
+     //Get configmap List
+     cmList := &corev1.ConfigMapList{}
+     label := map[string]string{"configmap-type": "mac-address"}
+     listOpts :=  client.MatchingLabels(label)
+
+
+     err := r.client.List(context.TODO(), listOpts, cmList)
+     if err != nil {
+        fmt.Printf
+        return true, err
+     }
+
+     for _, configmap := range cmList.Items {
+        cmData, err := r.getConfigMapData(namespace, configmap.Name)
+        if err != nil {
+           return true, err
+
+        }
+        if _, exist := cmData[macAddress]; exist {
+
+          return exist, nil
+        }
+
+     }
+
+     return false, nil
+
+}
+
+
 
 //Function to get the IP address of a host from the DHCP file
 func getHostIPaddress(macAddress string, dhcpLeaseFilePath string ) (string, error) {
@@ -577,7 +614,7 @@ func getHostIPaddress(macAddress string, dhcpLeaseFilePath string ) (string, err
 }
 
 //Function to create configmap
-func (r *ReconcileProvisioning) createConfigMap(p *bpav1alpha1.Provisioning, data map[string]string, cmName string) error{
+func (r *ReconcileProvisioning) createConfigMap(p *bpav1alpha1.Provisioning, data, labels map[string]string, cmName string) error{
 
          // Configmap has not been created, create it
           configmap := &corev1.ConfigMap{
@@ -585,7 +622,7 @@ func (r *ReconcileProvisioning) createConfigMap(p *bpav1alpha1.Provisioning, dat
               ObjectMeta: metav1.ObjectMeta{
                         Name: cmName,
 			Namespace: p.Namespace,
-                        Labels: p.Labels,
+                        Labels: labels,
                       },
               Data: data,
           }
@@ -604,11 +641,10 @@ func (r *ReconcileProvisioning) createConfigMap(p *bpav1alpha1.Provisioning, dat
 }
 
 //Function to get configmap Data
-func (r *ReconcileProvisioning) getConfigMapData(p *bpav1alpha1.Provisioning) (map[string]string, error) {
+func (r *ReconcileProvisioning) getConfigMapData(namespace, configmapName string) (map[string]string, error) {
 
-     configmapName :=  p.Labels["cluster"] + "-configmap"
      clusterConfigmap := &corev1.ConfigMap{}
-     err := r.client.Get(context.TODO(), types.NamespacedName{Name: configmapName, Namespace: p.Namespace}, clusterConfigmap)
+     err := r.client.Get(context.TODO(), types.NamespacedName{Name: configmapName, Namespace: namespace}, clusterConfigmap)
      if err != nil {
         return nil, err
      }
@@ -727,7 +763,7 @@ func (r *ReconcileProvisioning) createKUDinstallerJob(p *bpav1alpha1.Provisionin
 
 
 //Function to Check if job succeeded
-func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data map[string]string) {
+func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data, MACdata map[string]string) {
 
      clusterName := p.Labels["cluster"]
      fmt.Printf("\nChecking job status for cluster %s\n", clusterName)
@@ -748,12 +784,13 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data map[s
             fmt.Printf("\n Job succeeded, KUD successfully installed in Cluster %s\n", clusterName)
 
             //KUD was installed successfully create configmap to store IP address info for the cluster
-            cmName := p.Labels["cluster"] + "-configmap"
+            labels := p.Labels
+            cmName := labels["cluster"] + "-configmap"
             foundConfig := &corev1.ConfigMap{}
             err := r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: p.Namespace}, foundConfig)
 
             if err != nil && errors.IsNotFound(err) {
-               err = r.createConfigMap(p, data, cmName)
+               err = r.createConfigMap(p, data, labels, cmName)
                if err != nil {
                   fmt.Printf("Error occured while creating Ip address configmap for cluster %v\n ERROR: %v", clusterName, err)
                return
@@ -761,7 +798,26 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data map[s
             return
 
             } else if err != nil {
-              fmt.Printf("ERROR occured in Create Config map section: %v\n", err)
+              fmt.Printf("ERROR occured in Create IP address Config map section: %v\n", err)
+              return
+              }
+
+	    //KUD was installed successfully, create configmap to store MAC address info for the cluster
+	    cmName = p.Labels["cluster"] + "-mac-addresses"
+            foundConfig = &corev1.ConfigMap{}
+            err = r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: p.Namespace}, foundConfig)
+
+            if err != nil && errors.IsNotFound(err) {
+               labels["configmap-type"] = "mac-address"
+               err = r.createConfigMap(p, MACdata, labels, cmName)
+               if err != nil {
+                  fmt.Printf("Error occured while creating MAC address configmap for cluster %v\n ERROR: %v", clusterName, err)
+               return
+                }
+            return
+
+            } else if err != nil {
+              fmt.Printf("ERROR occured in Create MAC address Config map section: %v\n", err)
               return
               }
 
