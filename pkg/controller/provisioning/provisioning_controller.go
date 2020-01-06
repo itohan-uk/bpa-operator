@@ -223,6 +223,25 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
                       return reconcile.Result{}, err
                    }
 
+
+                   // Check if master MAC address has already been used
+                   usedMAC, err := r.macAddressUsed(provisioningInstance.Namespace, masterMAC, clusterName)
+
+
+                   if err != nil {
+
+                      fmt.Printf("Error occured while checking if mac Address has already been used\n %v", err)
+                      return reconcile.Result{}, err
+                   }
+
+                   if usedMAC {
+
+                      err = fmt.Errorf("MAC address %s has already been used, check and update provisioning CR", masterMAC)
+                      return reconcile.Result{}, err
+
+                   }
+
+                   // Check if Baremetal host with specified MAC address exist
                    containsMac, bmhCR := checkMACaddress(bareMetalHostList, masterMAC)
 
 		   //Check 'cluster-type' label for Virtlet VMs
@@ -236,7 +255,7 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
                        containsMac = true
 		   }
 
-                   if containsMac{
+                   if containsMac {
 
 		       if clusterType != "virtlet-vm" {
                            fmt.Printf("BareMetalHost CR %s has NIC with MAC Address %s\n", bmhCR, masterMAC)
@@ -255,10 +274,12 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
                        }
                        masterString += masterLabel + "\n"
                        clusterData[masterTag + masterLabel] = hostIPaddress
-                       clusterMACData[masterMAC] = masterTag + masterLabel
+                       clusterMACData[strings.ReplaceAll(masterMAC, ":", "-")] = masterTag + masterLabel
 
                        fmt.Printf("%s : %s \n", hostIPaddress, masterMAC)
 
+
+                       // Check if any worker MAC address was specified
                        if len(workersList) != 0 {
 
                            //Iterate through workersList and get all the mac addresses
@@ -308,6 +329,22 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
                                           return reconcile.Result{}, err
                                          }
 
+                                        // Check if worker MAC address has already been used
+                                        usedMAC, err = r.macAddressUsed(provisioningInstance.Namespace, workerMAC, clusterName)
+
+                                        if err != nil {
+
+                                           fmt.Printf("Error occured while checking if mac Address has already been used\n %v", err)
+                                           return reconcile.Result{}, err
+                                        }
+
+                                        if usedMAC {
+
+                                           err = fmt.Errorf("MAC address %s has already been used, check and update provisioning CR", workerMAC)
+                                           return reconcile.Result{}, err
+
+                                        }
+
                                         containsMac, bmhCR := checkMACaddress(bareMetalHostList, workerMAC)
 
 					if clusterType == "virtlet-vm" {
@@ -340,7 +377,7 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
                                            }
                                            workerString += workerLabel + "\n"
 					   clusterData[workerTag + workerLabel] = hostIPaddress
-					   clusterMACData[workerMAC] = workerTag + workerLabel
+					   clusterMACData[strings.ReplaceAll(workerMAC, ":", "-")] = workerTag + workerLabel
 
                                        //No host found that matches the worker MAC
                                        } else {
@@ -436,6 +473,25 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
 	//Create host.ini file for KUD
         hostFile.SaveTo(iniHostFilePath)
 
+        // Create configmap to store MAC address info for the cluster
+        cmName := provisioningInstance.Labels["cluster"] + "-mac-addresses"
+        foundConfig := &corev1.ConfigMap{}
+        err = r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: provisioningInstance.Namespace}, foundConfig)
+
+        if err != nil && errors.IsNotFound(err) {
+           labels :=  provisioningInstance.Labels
+           labels["configmap-type"] = "mac-address"
+           err = r.createConfigMap(provisioningInstance, clusterMACData, labels, cmName)
+           if err != nil {
+              fmt.Printf("Error occured while creating MAC address configmap for cluster %v\n ERROR: %v", clusterName, err)
+              return reconcile.Result{}, err
+            }
+
+        } else if err != nil {
+            fmt.Printf("ERROR occured in Create MAC address Config map section: %v\n", err)
+            return reconcile.Result{}, err
+          }
+
         //Install KUD
         err = r.createKUDinstallerJob(provisioningInstance)
         if err != nil {
@@ -460,7 +516,7 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
         defaultSSHPrivateKey := "/root/.ssh/id_rsa"
 
         //Get IP address configmap for the cluster
-        configmapName :=  p.Labels["cluster"] + "-configmap"
+        configmapName :=  softwareInstance.Labels["cluster"] + "-configmap"
         clusterConfigMapData, err := r.getConfigMapData(softwareInstance.Namespace, configmapName)
         if err != nil {
            fmt.Printf("Error occured while retrieving IP address Data for cluster %s, ERROR: %v\n", softwareClusterName, err)
@@ -532,30 +588,35 @@ func checkMACaddress(bareMetalHostList *unstructured.UnstructuredList, macAddres
 }
 
 //Function to check if MAC address has been used in another provisioning CR
-func (r *ReconcileProvisioning) macAddressUsed(namespace, macAddress string) (bool, error) {
+//Returns true if MAC address has already been used
+func (r *ReconcileProvisioning) macAddressUsed(namespace, macAddress, provisioningCluster string) (bool, error) {
 
+     macKey := strings.ReplaceAll(macAddress, ":", "-")
      //Get configmap List
      cmList := &corev1.ConfigMapList{}
      label := map[string]string{"configmap-type": "mac-address"}
      listOpts :=  client.MatchingLabels(label)
 
-
      err := r.client.List(context.TODO(), listOpts, cmList)
      if err != nil {
-        fmt.Printf
-        return true, err
+        return false, err
      }
 
      for _, configmap := range cmList.Items {
-        cmData, err := r.getConfigMapData(namespace, configmap.Name)
-        if err != nil {
-           return true, err
 
-        }
-        if _, exist := cmData[macAddress]; exist {
+        cmCluster := configmap.Labels["cluster"]
+        if cmCluster != provisioningCluster {
+            cmData, err := r.getConfigMapData(namespace, configmap.Name)
+            if err != nil {
+               return false, err
 
-          return exist, nil
-        }
+            }
+
+            if _, exist := cmData[macKey]; exist {
+
+               return exist, nil
+            }
+       }
 
      }
 
@@ -763,7 +824,7 @@ func (r *ReconcileProvisioning) createKUDinstallerJob(p *bpav1alpha1.Provisionin
 
 
 //Function to Check if job succeeded
-func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data, MACdata map[string]string) {
+func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data, MACdata  map[string]string) {
 
      clusterName := p.Labels["cluster"]
      fmt.Printf("\nChecking job status for cluster %s\n", clusterName)
@@ -792,16 +853,17 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data, MACd
             if err != nil && errors.IsNotFound(err) {
                err = r.createConfigMap(p, data, labels, cmName)
                if err != nil {
-                  fmt.Printf("Error occured while creating Ip address configmap for cluster %v\n ERROR: %v", clusterName, err)
+                  fmt.Printf("Error occured while creating IP address configmap for cluster %v\n ERROR: %v", clusterName, err)
                return
                 }
             return
 
             } else if err != nil {
-              fmt.Printf("ERROR occured in Create IP address Config map section: %v\n", err)
+              fmt.Printf("ERROR occured while checking if IP address configmap %v already exists: %v\n", cmName, err)
               return
               }
 
+            /*
 	    //KUD was installed successfully, create configmap to store MAC address info for the cluster
 	    cmName = p.Labels["cluster"] + "-mac-addresses"
             foundConfig = &corev1.ConfigMap{}
@@ -817,15 +879,31 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data, MACd
             return
 
             } else if err != nil {
-              fmt.Printf("ERROR occured in Create MAC address Config map section: %v\n", err)
+              fmt.Printf("ERROR occured while checking if configmap %v already exists: %v\n", cmName, err)
               return
               }
+           */
 
            return
          }
 
         if jobFailed == 1 {
            fmt.Printf("\n Job Failed, KUD not installed in Cluster %s, check pod logs\n", clusterName)
+
+           //Job failed delete MAC address configmap
+           cmName := p.Labels["cluster"] + "-mac-addresses"
+           foundConfig := &corev1.ConfigMap{}
+           err = r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: p.Namespace}, foundConfig)
+           if err != nil {
+              fmt.Printf("\n Error %v occured while trying to retrieve %s for deletion due to KUD installation failure",
+                         err, cmName)
+              return
+           }
+
+           err = r.client.Delete(context.TODO(), foundConfig)
+           if err != nil {
+              fmt.Printf("\n Error %v occured during configmap %s deletion\n", err, cmName)
+           }
            return
         }
 
