@@ -592,6 +592,7 @@ func checkMACaddress(bareMetalHostList *unstructured.UnstructuredList, macAddres
 func (r *ReconcileProvisioning) macAddressUsed(namespace, macAddress, provisioningCluster string) (bool, error) {
 
      macKey := strings.ReplaceAll(macAddress, ":", "-")
+
      //Get configmap List
      cmList := &corev1.ConfigMapList{}
      label := map[string]string{"configmap-type": "mac-address"}
@@ -854,9 +855,9 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data, MACd
                err = r.createConfigMap(p, data, labels, cmName)
                if err != nil {
                   fmt.Printf("Error occured while creating IP address configmap for cluster %v\n ERROR: %v", clusterName, err)
+                  return
+               }
                return
-                }
-            return
 
             } else if err != nil {
               fmt.Printf("ERROR occured while checking if IP address configmap %v already exists: %v\n", cmName, err)
@@ -890,20 +891,6 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data, MACd
         if jobFailed == 1 {
            fmt.Printf("\n Job Failed, KUD not installed in Cluster %s, check pod logs\n", clusterName)
 
-           //Job failed delete MAC address configmap
-           cmName := p.Labels["cluster"] + "-mac-addresses"
-           foundConfig := &corev1.ConfigMap{}
-           err = r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: p.Namespace}, foundConfig)
-           if err != nil {
-              fmt.Printf("\n Error %v occured while trying to retrieve %s for deletion due to KUD installation failure",
-                         err, cmName)
-              return
-           }
-
-           err = r.client.Delete(context.TODO(), foundConfig)
-           if err != nil {
-              fmt.Printf("\n Error %v occured during configmap %s deletion\n", err, cmName)
-           }
            return
         }
 
