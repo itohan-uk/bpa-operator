@@ -183,6 +183,7 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
         ///////////////////////////////////////////////////////////////////////////////////////////////
         ////////////////         Provisioning CR was created so install KUD          /////////////////
         //////////////////////////////////////////////////////////////////////////////////////////////
+        provisioningVersion := provisioningInstance.ResourceVersion
 	clusterName := provisioningInstance.Labels["cluster"]
 	clusterType := provisioningInstance.Labels["cluster-type"]
         mastersList := provisioningInstance.Spec.Masters
@@ -478,9 +479,24 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
         foundConfig := &corev1.ConfigMap{}
         err = r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: provisioningInstance.Namespace}, foundConfig)
 
-        if err != nil && errors.IsNotFound(err) {
+        // Configmap was found but the provisioning CR was updated so update configMap
+        if err == nil && foundConfig.Labels["provisioning-version"] != provisioningVersion {
+
+           foundConfig.Data = clusterMACData
+           foundConfig.Labels =  provisioningInstance.Labels
+           foundConfig.Labels["configmap-type"] = "mac-address"
+           foundConfig.Labels["provisioning-version"] = provisioningVersion
+           err = r.client.Update(context.TODO(), foundConfig)
+           if err != nil {
+              fmt.Printf("Error occured while updating mac address configmap for provisioningCR %s\n ERROR: %v\n", provisioningInstance.Name,
+              err)
+              return reconcile.Result{}, err
+           }
+
+        }  else if err != nil && errors.IsNotFound(err) {
            labels :=  provisioningInstance.Labels
            labels["configmap-type"] = "mac-address"
+           labels["provisioning-version"] = provisioningVersion
            err = r.createConfigMap(provisioningInstance, clusterMACData, labels, cmName)
            if err != nil {
               fmt.Printf("Error occured while creating MAC address configmap for cluster %v\n ERROR: %v", clusterName, err)
@@ -501,7 +517,7 @@ func (r *ReconcileProvisioning) Reconcile(request reconcile.Request) (reconcile.
 
         //Start separate thread to keep checking job status, Create an IP address configmap
         //for cluster if KUD is successfully installed
-        go r.checkJob(provisioningInstance, clusterData, clusterMACData)
+        go r.checkJob(provisioningInstance, clusterData)
 
         return reconcile.Result{}, nil
 
@@ -724,12 +740,24 @@ func (r *ReconcileProvisioning) createKUDinstallerJob(p *bpav1alpha1.Provisionin
 
     kudPlugins := p.Spec.KUDPlugins
 
-    jobName := "kud-" + p.Labels["cluster"]
+    jobLabel := p.Labels
+    jobLabel["provisioning-version"] = p.ResourceVersion
+    jobName := "kud-" + jobLabel["cluster"]
 
     // Check if the job already exist
     foundJob := &batchv1.Job{}
     err := r.client.Get(context.TODO(), types.NamespacedName{Name: jobName, Namespace: p.Namespace}, foundJob)
-    if err != nil && errors.IsNotFound(err) {
+
+    if (err == nil && foundJob.Labels["provisioning-version"] != jobLabel["provisioning-version"]) || (err != nil && errors.IsNotFound(err)) {
+
+       // If err == nil and its in this statement, then provisioning CR was updated, delete job
+       if err == nil {
+          err = r.client.Delete(context.TODO(), foundJob, client.PropagationPolicy(metav1.DeletePropagationForeground))
+          if err != nil {
+             fmt.Printf("Error occured while deleting kud install job for updated provisioning CR %v\n", err)
+             return err
+          }
+       }
 
        // Job has not been created, create a new kud job
        installerString := " ./installer --cluster " + p.Labels["cluster"]
@@ -751,7 +779,7 @@ func (r *ReconcileProvisioning) createKUDinstallerJob(p *bpav1alpha1.Provisionin
         ObjectMeta: metav1.ObjectMeta{
                        Name: jobName,
                        Namespace: p.Namespace,
-                       Labels: p.Labels,
+                       Labels: jobLabel,
                 },
                 Spec: batchv1.JobSpec{
                       Template: corev1.PodTemplateSpec{
@@ -825,7 +853,7 @@ func (r *ReconcileProvisioning) createKUDinstallerJob(p *bpav1alpha1.Provisionin
 
 
 //Function to Check if job succeeded
-func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data, MACdata  map[string]string) {
+func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data map[string]string) {
 
      clusterName := p.Labels["cluster"]
      fmt.Printf("\nChecking job status for cluster %s\n", clusterName)
@@ -847,11 +875,23 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data, MACd
 
             //KUD was installed successfully create configmap to store IP address info for the cluster
             labels := p.Labels
+            labels["provisioning-version"] = p.ResourceVersion
             cmName := labels["cluster"] + "-configmap"
             foundConfig := &corev1.ConfigMap{}
             err := r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: p.Namespace}, foundConfig)
 
-            if err != nil && errors.IsNotFound(err) {
+            // Check if provisioning CR was updated
+            if err == nil && foundConfig.Labels["provisioning-version"] != labels["provisioning-version"] {
+
+               foundConfig.Data = data
+               foundConfig.Labels =  labels
+               err = r.client.Update(context.TODO(), foundConfig)
+               if err != nil {
+                  fmt.Printf("Error occured while updating IP address configmap for provisioningCR %s\n ERROR: %v\n", p.Name, err)
+                  return
+                }
+
+            } else if err != nil && errors.IsNotFound(err) {
                err = r.createConfigMap(p, data, labels, cmName)
                if err != nil {
                   fmt.Printf("Error occured while creating IP address configmap for cluster %v\n ERROR: %v", clusterName, err)
@@ -864,26 +904,6 @@ func (r *ReconcileProvisioning) checkJob(p *bpav1alpha1.Provisioning, data, MACd
               return
               }
 
-            /*
-	    //KUD was installed successfully, create configmap to store MAC address info for the cluster
-	    cmName = p.Labels["cluster"] + "-mac-addresses"
-            foundConfig = &corev1.ConfigMap{}
-            err = r.client.Get(context.TODO(), types.NamespacedName{Name: cmName, Namespace: p.Namespace}, foundConfig)
-
-            if err != nil && errors.IsNotFound(err) {
-               labels["configmap-type"] = "mac-address"
-               err = r.createConfigMap(p, MACdata, labels, cmName)
-               if err != nil {
-                  fmt.Printf("Error occured while creating MAC address configmap for cluster %v\n ERROR: %v", clusterName, err)
-               return
-                }
-            return
-
-            } else if err != nil {
-              fmt.Printf("ERROR occured while checking if configmap %v already exists: %v\n", cmName, err)
-              return
-              }
-           */
 
            return
          }
